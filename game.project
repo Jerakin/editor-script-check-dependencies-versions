@@ -1,3 +1,6 @@
 [project]
-title = template
+title = editor-script-check-dependencies
+
+[library]
+include_dirs = editor-script-check-dependencies
 
