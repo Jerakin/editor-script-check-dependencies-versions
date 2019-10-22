@@ -22,6 +22,14 @@ from distutils.version import StrictVersion
 import time
 
 
+def MyStrictVersion(v):
+    m = re.search('^(\D|)+(.*)', v)
+    if m:
+        v = m.group(2)
+    v = v or "0.0"
+    return StrictVersion(v)
+
+
 def get_dependencies(config_file):
     config = ConfigParser()
     config.read(config_file)
@@ -68,9 +76,9 @@ def get_latest_version(request):
 
     version_string = json_response["tag_name"]
     try:
-        return StrictVersion(version_string)
+        return MyStrictVersion(version_string)
     except ValueError:
-        return StrictVersion("0.0")
+        return MyStrictVersion("0.0")
 
 
 def compare_versions(old, new, project, url):
@@ -79,7 +87,7 @@ def compare_versions(old, new, project, url):
         print("Project '{}' is out dated, latest version is".format(project))
         print("  {}/archive/{}.zip\n".format(url, new))
     else:
-        if old == StrictVersion("0.0"):
+        if old == MyStrictVersion("0.0"):
             print("Project '{}' does not have any versions.\n".format(project))
         else:
             print("Project '{}' is up to date.\n".format(project))
@@ -99,13 +107,13 @@ def get_latest_tags(request):
     for p in json_response:
         tags.append(p["name"])
     try:
-        tags.sort(key=StrictVersion)
+        tags.sort(key=MyStrictVersion)
         if tags:
-            return StrictVersion(tags[-1])
+            return MyStrictVersion(tags[-1])
         else:
-            return StrictVersion("0.0")
+            return MyStrictVersion("0.0")
     except ValueError:
-        return StrictVersion("0.0")
+        return MyStrictVersion("0.0")
 
 
 def check_rate_limit(header, dependencies):
@@ -152,13 +160,13 @@ def main():
 
         # Collect the version from the url
         try:
-            current_version = StrictVersion(dependency.split("/")[-1].replace(".zip", ""))
+            current_version = MyStrictVersion(dependency.split("/")[-1].replace(".zip", ""))
         except ValueError:
             if "master.zip" in dependency:
                 print("Project '{}' is using master this is not recommended.".format(project))
             else:
                 print("Project '{}' does not follow Semantic Versioning.".format(project))
-            current_version = StrictVersion("0.0")
+            current_version = MyStrictVersion("0.0")
 
         # First check of there are any releases
         releases = "https://api.github.com/repos/{}/{}/releases".format(owner, project)
