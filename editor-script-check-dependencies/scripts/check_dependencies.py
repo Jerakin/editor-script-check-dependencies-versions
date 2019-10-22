@@ -3,62 +3,74 @@
 Editor script to create a component for the provided resource
 """
 
-from pathlib import Path
+import os
 import json
-from urllib.request import urlopen
-from urllib.request import Request
-import configparser
+try:
+    from urllib.request import urlopen
+    from urllib.request import Request
+except ImportError:
+    from urllib2 import urlopen
+    from urllib2 import Request
+
+try:
+    from ConfigParser import SafeConfigParser as ConfigParser
+except ImportError:
+    from configparser import ConfigParser
+
 import re
-from packaging import version
+from distutils.version import StrictVersion
 import time
 
 
 def get_dependencies(config_file):
-    config = configparser.ConfigParser()
+    config = ConfigParser()
     config.read(config_file)
-    return config['project']['dependencies'].split(",")
+    if config.has_option("project", "dependencies"):
+        return config.get('project', 'dependencies').split(",")
+    return []
 
 
 def get_header():
-    root = Path().cwd()
-    config_file = root / ".editor-script-settings" / "editor-script-check-dependencies"
+    config_file = os.path.join(os.getcwd(),".editor-script-settings", "editor-script-check-dependencies")
     header = {"User-Agent": "editor-script-check-dependencies"}
-    if config_file.exists():
-        config = configparser.ConfigParser()
+    if os.path.exists(config_file):
+        config = ConfigParser()
         config.read(config_file)
-        if config.has_section("Authenticate"):
-            if "token" in config["Authenticate"]:
-                header['Authorization'] = "token " + config['Authenticate']['TOKEN']
+        if config.has_option("Authenticate", "TOKEN"):
+            header['Authorization'] = "token " + config.get('Authenticate', 'TOKEN')
     return header
 
 
 def have_releases(request):
     """Check if a repository is using releases
     GET /repos/:owner/:repo/releases"""
-    with urlopen(request) as response:
-        if response.status not in [200, 304]:
-            return False
-        response_content = response.read()
-        response_content.decode('utf-8')
-        json_response = json.loads(response_content)
-        if json_response:
-            return True
+    response = urlopen(request)
+    if response.getcode() not in [200, 304]:
+        return False
+    response_content = response.read()
+    response_content.decode('utf-8')
+    json_response = json.loads(response_content)
+    if json_response:
+        return True
     return False
 
 
 def get_latest_version(request):
     """Get the latest version
     GET /repos/:owner/:repo/releases/latest"""
-    with urlopen(request) as response:
-        if response.status not in [200, 304]:
-            return
+    response = urlopen(request)
+    if response.getcode() not in [200, 304]:
+        return
 
-        response_content = response.read()
-        response_content.decode('utf-8')
-        json_response = json.loads(response_content)
+    response_content = response.read()
+    response_content.decode('utf-8')
+    json_response = json.loads(response_content)
 
-        version_string = json_response["tag_name"]
-        return version.parse(version_string)
+    version_string = json_response["tag_name"]
+    try:
+        return StrictVersion(version_string)
+    except ValueError:
+        return StrictVersion("0.0")
 
 
 def compare_versions(old, new, project, url):
@@ -67,24 +79,33 @@ def compare_versions(old, new, project, url):
         print("Project '{}' is out dated, latest version is".format(project))
         print("  {}/archive/{}.zip\n".format(url, new))
     else:
-        print("Project '{}' is up to date.\n".format(project))
+        if old == StrictVersion("0.0"):
+            print("Project '{}' does not have any versions.\n".format(project))
+        else:
+            print("Project '{}' is up to date.\n".format(project))
 
 
 def get_latest_tags(request):
     """If a project is not using releases presume the latest tag is the latest release
     GET /repos/:owner/:repo/tags"""
-    with urlopen(request) as response:
-        if response.status not in [200, 304]:
-            return
+    response = urlopen(request)
+    if response.getcode() not in [200, 304]:
+        return
 
-        response_content = response.read()
-        response_content.decode('utf-8')
-        json_response = json.loads(response_content)
-        tags = []
-        for p in json_response:
-            tags.append(p["name"])
-        tags.sort(key=version.parse)
-        return version.parse(tags[-1])
+    response_content = response.read()
+    response_content.decode('utf-8')
+    json_response = json.loads(response_content)
+    tags = []
+    for p in json_response:
+        tags.append(p["name"])
+    try:
+        tags.sort(key=StrictVersion)
+        if tags:
+            return StrictVersion(tags[-1])
+        else:
+            return StrictVersion("0.0")
+    except ValueError:
+        return StrictVersion("0.0")
 
 
 def check_rate_limit(header, dependencies):
@@ -93,27 +114,27 @@ def check_rate_limit(header, dependencies):
 
     request_url = "https://api.github.com/rate_limit"
     request = Request(request_url, headers=header)
-    with urlopen(request) as response:
-        if response.status not in [200, 304]:
-            return
-        response_content = response.read()
-        response_content.decode('utf-8')
-        json_response = json.loads(response_content)
+    response = urlopen(request)
+    if response.getcode() not in [200, 304]:
+        return
+    response_content = response.read()
+    response_content.decode('utf-8')
+    json_response = json.loads(response_content)
 
-        limit = json_response["resources"]["core"]["limit"]
-        remaining = json_response["resources"]["core"]["remaining"]
-        reset = json_response["resources"]["core"]["reset"]
+    limit = json_response["resources"]["core"]["limit"]
+    remaining = json_response["resources"]["core"]["remaining"]
+    reset = json_response["resources"]["core"]["reset"]
 
-        if len(dependencies) > remaining:
-            if "token" not in header:
-                print("You are rate limited to {} dependency checks, add a 'token' to increase this limit".format(limit))
-            print("You are rate limited until", time.ctime(reset))
-        if remaining == 0:
-            return True
+    if len(dependencies) > remaining:
+        if "token" not in header:
+            print("You are rate limited to {} dependency checks, add a 'token' to increase this limit".format(limit))
+        print("You are rate limited until", time.ctime(reset))
+    if remaining == 0:
+        return True
 
 
 def main():
-    game_project = Path().cwd() / "game.project"
+    game_project = os.path.join(os.getcwd(), "game.project")
     header = get_header()
     dependencies = get_dependencies(game_project)
 
@@ -130,9 +151,14 @@ def main():
         owner = url.split("/")[-2]
 
         # Collect the version from the url
-        current_version = version.parse(dependency.split("/")[-1].replace(".zip", ""))
-        if current_version.epoch == -1:
-            print("{} does not follow Semantic Versioning.".format(project))
+        try:
+            current_version = StrictVersion(dependency.split("/")[-1].replace(".zip", ""))
+        except ValueError:
+            if "master.zip" in dependency:
+                print("Project '{}' is using master this is not recommended.".format(project))
+            else:
+                print("Project '{}' does not follow Semantic Versioning.".format(project))
+            current_version = StrictVersion("0.0")
 
         # First check of there are any releases
         releases = "https://api.github.com/repos/{}/{}/releases".format(owner, project)

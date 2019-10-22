@@ -2,15 +2,8 @@ local check_dependencies = require "editor-script-check-dependencies.scripts.che
 
 local M = {}
 
-local function command_workaround()
-	if editor.platform == "x86_64-darwin" then
-		return "./editor-script-check-dependencies/scripts/extend_path.sh"
-	end
-	return "python"
-end
-
 function M.get_commands()
-	return 
+	return
 	{
 		{
 			label="Check Libraries for Updates",
@@ -23,8 +16,8 @@ function M.get_commands()
 				else
 					return {
 						{
-							action = "shell", 
-							command = {command_workaround(), "./editor-script-check-dependencies/scripts/check_dependencies.py"}
+							action = "shell",
+							command = {"python", "-c", editor.get("/editor-script-check-dependencies/scripts/check_dependencies.py", "text")}
 						}
 					}
 				end
