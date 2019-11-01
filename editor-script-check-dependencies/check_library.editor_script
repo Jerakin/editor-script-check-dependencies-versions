@@ -17,7 +17,7 @@ function M.get_commands()
 					return {
 						{
 							action = "shell",
-							command = {"python", "-c", editor.get("/editor-script-check-dependencies/scripts/check_dependencies.py", "text")}
+							command = {"python", "-u", "-c", editor.get("/editor-script-check-dependencies/scripts/check_dependencies.py", "text")}
 						}
 					}
 				end
