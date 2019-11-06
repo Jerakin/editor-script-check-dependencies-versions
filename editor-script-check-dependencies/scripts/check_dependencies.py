@@ -8,9 +8,11 @@ import json
 try:
     from urllib.request import urlopen
     from urllib.request import Request
+    from urllib.request import HTTPError
 except ImportError:
     from urllib2 import urlopen
     from urllib2 import Request
+    from urllib2 import HTTPError
 
 try:
     from ConfigParser import SafeConfigParser as ConfigParser
@@ -84,7 +86,7 @@ def get_latest_version(request):
 def compare_versions(old, new, project, url):
     """Print our version information"""
     if new > old:
-        print("Project '{}' is out dated, latest version is".format(project))
+        print("Project '{}' is outdated, latest version is".format(project))
         print("  {}/archive/{}.zip\n".format(url, new))
     else:
         if old == MyStrictVersion("0.0"):
@@ -171,20 +173,23 @@ def main():
         # First check of there are any releases
         releases = "https://api.github.com/repos/{}/{}/releases".format(owner, project)
         request = Request(releases, headers=header)
-        if have_releases(request):
-            latest = "https://api.github.com/repos/{}/{}/releases/latest".format(owner, project)
-            request = Request(latest, headers=header)
-            latest = get_latest_version(request)
-        else:
-            # Get the latest version from tags if there are no releases
-            releases = "https://api.github.com/repos/{}/{}/tags".format(owner, project)
-            request = Request(releases, headers=header)
-            latest = get_latest_tags(request)
+        try:
+            if have_releases(request):
+                latest = "https://api.github.com/repos/{}/{}/releases/latest".format(owner, project)
+                request = Request(latest, headers=header)
+                latest = get_latest_version(request)
+            else:
+                # Get the latest version from tags if there are no releases
+                releases = "https://api.github.com/repos/{}/{}/tags".format(owner, project)
+                request = Request(releases, headers=header)
+                latest = get_latest_tags(request)
 
-        compare_versions(current_version, latest, project, url)
+            compare_versions(current_version, latest, project, url)
 
-        if "Authorization" not in header:
-            time.sleep(2)  # We are only allowed to do one call every 2 min if we are not using authorization
+            if "Authorization" not in header:
+                time.sleep(2)  # We are only allowed to do one call every 2 min if we are not using authorization
+        except HTTPError as e:
+            print("Project '{}' could not be checked, HTTPError {}.".format(project, e.code))
 
 
 if __name__ == '__main__':
