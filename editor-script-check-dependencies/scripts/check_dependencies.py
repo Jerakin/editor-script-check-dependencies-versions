@@ -35,9 +35,13 @@ def MyStrictVersion(v):
 def get_dependencies(config_file):
     config = ConfigParser()
     config.read(config_file)
-    if config.has_option("project", "dependencies"):
-        return config.get('project', 'dependencies').split(",")
-    return []
+    deps = []
+    i = 0
+    while True:
+        if not config.has_option("project", f"dependencies#{i}"):
+            break
+        deps.append(config.get('project', f"dependencies#{i}"))
+    return deps
 
 
 def get_header():
