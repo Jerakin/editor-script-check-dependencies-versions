@@ -1,5 +1,9 @@
 # Check Dependencies
 
+> [!NOTE]
+> If you can not get this editor script to work you can always run the python script from your command line.
+> Download the python file, within your CMD/Terminal navigate to your project then run the script.
+
 ## Install
 You can use the these editor scripts in your own project by adding this project as a [Defold library dependency](https://www.defold.com/manuals/libraries/). Open your game.project file and in the dependencies field under project add:  
 https://github.com/Jerakin/editor-script-check-dependencies-versions/archive/master.zip
