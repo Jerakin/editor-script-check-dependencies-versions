@@ -41,6 +41,7 @@ def get_dependencies(config_file):
         if not config.has_option("project", f"dependencies#{i}"):
             break
         deps.append(config.get('project', f"dependencies#{i}"))
+        i += 1
     return deps
 
 
@@ -86,17 +87,16 @@ def get_latest_version(request):
     except ValueError:
         return MyStrictVersion("0.0")
 
-
-def compare_versions(old, new, project, url):
+def compare_versions(dependency, old, new, project, url):
     """Print our version information"""
     if new > old:
-        print("Project '{}' is outdated, latest version is".format(project))
-        print("  {}/archive/{}.zip\n".format(url, new))
+        print("   {}/archive/{}.zip".format(url, new))
     else:
         if old == MyStrictVersion("0.0"):
-            print("Project '{}' does not have any versions.\n".format(project))
+            print("   no release version found.".format(project))
         else:
-            print("Project '{}' is up to date.\n".format(project))
+            print("    using latest version.".format(project))
+    print("   using master.zip is not recommended.".format(project))
 
 
 def get_latest_tags(request):
@@ -164,14 +164,13 @@ def main():
         project = url.split("/")[-1]
         owner = url.split("/")[-2]
 
+        print("Checking '{}'...".format(project))
+
         # Collect the version from the url
         try:
             current_version = MyStrictVersion(dependency.split("/")[-1].replace(".zip", ""))
         except ValueError:
-            if "master.zip" in dependency:
-                print("Project '{}' is using master this is not recommended.".format(project))
-            else:
-                print("Project '{}' does not follow Semantic Versioning.".format(project))
+            print("    current version does not follow Semantic Versioning, info could be unreliable.")
             current_version = MyStrictVersion("0.0")
 
         # First check of there are any releases
@@ -188,12 +187,14 @@ def main():
                 request = Request(releases, headers=header)
                 latest = get_latest_tags(request)
 
-            compare_versions(current_version, latest, project, url)
+            compare_versions(dependency, current_version, latest, project, url)
 
             if "Authorization" not in header:
                 time.sleep(2)  # We are only allowed to do one call every 2 min if we are not using authorization
         except HTTPError as e:
-            print("Project '{}' could not be checked, HTTPError {}.".format(project, e.code))
+            print("    HTTPError {}.".format(e.code))
+
+        print("\n")
 
 
 if __name__ == '__main__':
