@@ -56,7 +56,7 @@ end
 
 local function print_result(result_table)
 	print()
-	print("editor-script-check-depedendencies")
+	print("editor-script-check-dependencies")
 	print(" " .. ok      .. "  The dependency is up to date.")
 	print(" " .. error   .. "  The dependency is outdated.")
 	print(" " .. warning .. "  The dependency is not using a semver supported release.")

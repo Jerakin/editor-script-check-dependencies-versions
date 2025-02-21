@@ -8,7 +8,7 @@ https://github.com/Jerakin/editor-script-check-dependencies-versions/archive/mas
 This script adds a item under `view`. Running the command will print out the states of your dependencies to the console.
 
 ```
-editor-script-check-depedendencies
+editor-script-check-dependencies
  ✔  The dependency is up to date.
  ✖  The dependency is outdated.
  !  The dependency is not using a semver supported release.
