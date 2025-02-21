@@ -1,384 +1,218 @@
----
--- Version comparison library for Lua.
---
--- Comparison is simple and straightforward, with basic support for SemVer.
---
--- @usage
--- local version = require("version")
---
--- -- create a version and perform some comparisons
--- local v = version("3.1.0")
--- assert( v == version("3.1"))   -- missing elements default to zero, and hence are equal
--- assert( v > version("3.0"))
---
--- -- create a version range, and check whether a version is within that range
--- local r = version.range("2.75", "3.50.3")
--- assert(r:matches(v))
---
--- -- create a set of multiple ranges, adding elements in a chained fashion
--- local compatible = version.set("1.1","1.2"):allowed("2.1", "2.5"):disallowed("2.3")
---
--- assert(compatible:matches("1.1.3"))
--- assert(compatible:matches("1.1.3"))
--- assert(compatible:matches("2.4"))
--- assert(not compatible:matches("2.0"))
--- assert(not compatible:matches("2.3"))
---
--- -- print a formatted set
--- print(compatible) --> "1.1 to 1.2 and 2.1 to 2.5, but not 2.3"
---
--- -- create an upwards compatibility check, allowing all versions 1.x
--- local c = version.set("1.0","2.0"):disallowed("2.0")
--- assert(c:matches("1.4"))
--- assert(not c:matches("2.0"))
---
--- -- default parsing
--- print(version("5.2"))                    -- "5.2"
--- print(version("Lua 5.2 for me"))         -- "5.2"
--- print(version("5..2"))                   -- nil, "Not a valid version element: '5..2'"
---
--- -- strict parsing
--- print(version.strict("5.2"))             -- "5.2"
--- print(version.strict("Lua 5.2 for me"))  -- nil, "Not a valid version element: 'Lua 5.2 for me'"
--- print(version.strict("5..2"))            -- nil, "Not a valid version element: '5..2'"
---
--- @copyright Kong Inc.
--- @author Thijs Schreijer
--- @license Apache 2.0
+local semver = {
+_VERSION     = '1.2.1',
+_DESCRIPTION = 'semver for Lua',
+_URL         = 'https://github.com/kikito/semver.lua',
+_LICENSE     = [[
+MIT LICENSE
 
+Copyright (c) 2015 Enrique García Cota
 
-local table_insert = table.insert
-local table_concat = table.concat
-local math_max = math.max
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of tother software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+	the following conditions:
 
--- Utility split function
-local function split(str, pat)
-	local t = {}
-	local fpat = "(.-)" .. pat
-	local last_end = 1
-	local s, e, cap = str:find(fpat, 1)
+	The above copyright notice and this permission notice shall be included
+	in all copies or substantial portions of the Software.
 
-	while s do
-		if s ~= 1 or cap ~= "" then
-			table_insert(t,cap)
-		end
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+	OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+	MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+	IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+	CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+	TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+	SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+	]]
+}
 
-		last_end = e + 1
-		s, e, cap = str:find(fpat, last_end)
-	end
+local function checkPositiveInteger(number, name)
+	assert(number >= 0, name .. ' must be a valid positive number')
+	assert(math.floor(number) == number, name .. ' must be an integer')
+end
 
-	if last_end <= #str then
-		cap = str:sub(last_end)
-		table_insert(t, cap)
-	end
+local function present(value)
+	return value and value ~= ''
+end
 
+-- splitByDot("a.bbc.d") == {"a", "bbc", "d"}
+local function splitByDot(str)
+	str = str or ""
+	local t, count = {}, 0
+	str:gsub("([^%.]+)", function(c)
+		count = count + 1
+		t[count] = c
+	end)
 	return t
 end
 
--- foreward declaration of constructor
-local _new, _range, _set
+local function parsePrereleaseAndBuildWithSign(str)
+	local prereleaseWithSign, buildWithSign = str:match("^(-[^+]+)(+.+)$")
+	if not (prereleaseWithSign and buildWithSign) then
+		prereleaseWithSign = str:match("^(-.+)$")
+		buildWithSign      = str:match("^(+.+)$")
+	end
+	assert(prereleaseWithSign or buildWithSign, ("The parameter %q must begin with + or - to denote a prerelease or a build"):format(str))
+	return prereleaseWithSign, buildWithSign
+end
 
--- Metatables for version, range and set
-local mt_version
-mt_version = {
-	__index = {
-		--- Matches a provider-version on a consumer-version based on the
-		-- semantic versioning specification.
-		-- The implementation does not support pre-release and/or build metadata,
-		-- only the major, minor, and patch levels are compared.
-		-- @function ver:semver
-		-- @param v Version (string or `version` object) as served by the provider
-		-- @return `true` or `false` whether the version matches, or `nil+err`
-		-- @usage local consumer = "1.2"     -- consumer requested version
-		-- local provider = "1.5.2"   -- provider served version
-		--
-		-- local compatible = version(consumer):semver(provider)
-		semver = function(self, v)
-			-- this function will be called once (in the meta table), it will set
-			-- the actual function on the version table itself
-			if self[1] == 0 then
-				-- major 0 is only compatible when equal
-				self.semver = function(self2, v2)
-					if getmetatable(v2) ~= mt_version then
-						local parsed, err = _new(v2, self2.strict)
-						if not parsed then return nil, err end
-						v2 = parsed
-					end
-					return self2 == v2
-				end
-			elseif self[4] then
-				-- more than 3 elements, cannot compare
-				self.semver = function()
-					return nil, "Version has too many elements (semver max 3)"
-				end
-			else
-				local semver_set = _set(self, self[1] + 1, self.strict):disallowed(self[1] + 1)
-				self.semver = function(_, v2)
-					return semver_set:matches(v2)
-				end
-			end
-			return self:semver(v)
-		end
-	},
-	__eq = function(a,b)
-		local l = math_max(#a, #b)
-		for i = 1, l do
-			if (a[i] or 0) ~= (b[i] or 0) then
-				return false
-			end
-		end
-		return true
-	end,
-	__lt = function(a,b)
-		if getmetatable(a) ~= mt_version or getmetatable(b) ~= mt_version then
-			local t = getmetatable(a) ~= mt_version and type(a) or type(b)
-			error("cannot compare a 'version' to a '" .. t .. "'", 2)
-		end
-		local l = math_max(#a, #b)
-		for i = 1, l do
-			if (a[i] or 0) < (b[i] or 0) then
-				return true
-			end
-			if (a[i] or 0) > (b[i] or 0) then
-				return false
-			end
-		end
-		return false
-	end,
-	__tostring = function(self)
-		return table_concat(self, ".")
-	end,
-}
+local function parsePrerelease(prereleaseWithSign)
+	if prereleaseWithSign then
+		local prerelease = prereleaseWithSign:match("^-(%w[%.%w-]*)$")
+		assert(prerelease, ("The prerelease %q is not a slash followed by alphanumerics, dots and slashes"):format(prereleaseWithSign))
+		return prerelease
+	end
+end
 
-local mt_range = {
-	__index = {
-		--- Matches a version on a range.
-		-- @function range:matches
-		-- @param v Version (string or `version` object) to match
-		-- @return `true` or `false` whether the version matches the range, or `nil+err`
-		matches = function(self, v)
-			if getmetatable(v) ~= mt_version then
-				local parsed, err = _new(v, self.strict)
-				if not parsed then return nil, err end
-				v = parsed
-			end
+local function parseBuild(buildWithSign)
+	if buildWithSign then
+		local build = buildWithSign:match("^%+(%w[%.%w-]*)$")
+		assert(build, ("The build %q is not a + sign followed by alphanumerics, dots and slashes"):format(buildWithSign))
+		return build
+	end
+end
 
-			return (v >= self.from) and (v <= self.to)
-		end,
-	},
-	__tostring = function(self)
-		local f, t = tostring(self.from), tostring(self.to)
-		if f == t then
-			return f
-		else
-			return f .. " to " .. t
-		end
-	end,
-}
+local function parsePrereleaseAndBuild(str)
+	if not present(str) then return nil, nil end
 
-local mt_set = {
-	__index = {
-		--- Adds an ALLOWED range to the set.
-		-- @function set:allowed
-		-- @param v1 Version or range, if version, the FROM version in either string or `version` object format
-		-- @param v2 Version (optional), TO version in either string or `version` object format
-		-- @return The `set` object, to easy chain multiple allowed/disallowed ranges, or `nil+err`
-		allowed = function(self, v1, v2)
-			if getmetatable(v1) == mt_range then
-				assert (v2 == nil, "First parameter was a range, second must be nil.")
-				table_insert(self.ok, v1)
-			else
-				local r, err = _range(v1, v2, self.strict)
-				if not r then return nil, err end
-				table_insert(self.ok, r)
-			end
-			return self
-		end,
-		--- Adds a DISALLOWED range to the set.
-		-- @function set:disallowed
-		-- @param v1 Version or range, if version, the FROM version in either string or `version` object format
-		-- @param v2 Version (optional), TO version in either string or `version` object format
-		-- @return The `set` object, to easy chain multiple allowed/disallowed ranges, or `nil+err`
-		disallowed = function(self,v1, v2)
-			if getmetatable(v1) == mt_range then
-				assert (v2 == nil, "First parameter was a range, second must be nil.")
-				table_insert(self.nok, v1)
-			else
-				local r, err = _range(v1, v2, self.strict)
-				if not r then return nil, err end
-				table_insert(self.nok, r)
-			end
-			return self
-		end,
+	local prereleaseWithSign, buildWithSign = parsePrereleaseAndBuildWithSign(str)
 
-		--- Matches a version against the set of allowed and disallowed versions.
-		--
-		-- NOTE: `disallowed` has a higher precedence, so a version that matches the `allowed` set,
-		-- but also the `disallowed` set, will return `false`.
-		-- @function set:matches
-		-- @param v1 Version to match (either string or `version` object).
-		-- @return `true` or `false` whether the version matches the set, or `nil+err`
-		matches = function(self, v)
-			if getmetatable(v) ~= mt_version then
-				local parsed, err = _new(v, self.strict)
-				if not parsed then return nil, err end
-				v = parsed
-			end
+	local prerelease = parsePrerelease(prereleaseWithSign)
+	local build = parseBuild(buildWithSign)
 
-			local success
-			for _, range in pairs(self.ok) do
-				if range:matches(v) then
-					success = true
-					break
-				end
-			end
-			if not success then
-				return false
-			end
-			for _, range in pairs(self.nok) do
-				if range:matches(v) then
-					return false
-				end
-			end
-			return true
-		end,
-	},
-	__tostring = function(self)
-		local ok, nok
-		if #self.ok == 1 then
-			ok = tostring(self.ok[1])
-		elseif #self.ok > 1 then
-			ok = tostring(self.ok[1])
-			for i = 2, #self.ok - 1 do
-				ok = ok .. ", " ..tostring(self.ok[i])
-			end
-			ok = ok .. ", and " .. tostring(self.ok[#self.ok])
-		end
-		if #self.nok == 1 then
-			nok = tostring(self.nok[1])
-		elseif #self.nok > 1 then
-			nok = tostring(self.nok[1])
-			for i = 2, #self.nok - 1 do
-				nok = nok .. ", " ..tostring(self.nok[i])
-			end
-			nok = nok .. ", and " .. tostring(self.nok[#self.nok])
-		end
-		if ok and nok then
-			return ok .. ", but not " .. nok
-		else
-			return ok
-		end
-	end,
-}
+	return prerelease, build
+end
+
+local function parseVersion(str)
+	local sMajor, sMinor, sPatch, sPrereleaseAndBuild = str:match("^(%d+)%.?(%d*)%.?(%d*)(.-)$")
+	-- CHANGED: version returns nil if it can't be parsed
+	--assert(type(sMajor) == 'string', ("Could not extract version number(s) from %q"):format(str))
+	if sMajor == nil then
+		return nil
+	end
+	
+	local major, minor, patch = tonumber(sMajor), tonumber(sMinor), tonumber(sPatch)
+	local prerelease, build = parsePrereleaseAndBuild(sPrereleaseAndBuild)
+	return major, minor, patch, prerelease, build
+end
 
 
-_new = function(v, strict)
-	v = tostring(v)
-	if strict then
-		-- edge case: do not allow trailing dot
-		if v:sub(-1,-1) == "." then
-			return nil, "Not a valid version element: '"..tostring(v).."'"
-		end
+-- return 0 if a == b, -1 if a < b, and 1 if a > b
+local function compare(a,b)
+	return a == b and 0 or a < b and -1 or 1
+end
+
+local function compareIds(myId, otherId)
+	if myId == otherId then return  0
+	elseif not myId    then return -1
+	elseif not otherId then return  1
+	end
+
+	local selfNumber, otherNumber = tonumber(myId), tonumber(otherId)
+
+	if selfNumber and otherNumber then -- numerical comparison
+		return compare(selfNumber, otherNumber)
+		-- numericals are always smaller than alphanums
+	elseif selfNumber then
+		return -1
+	elseif otherNumber then
+		return 1
 	else
-		local m = v:match("(%d[%d%.]*)")
-		if not m then
-			return nil, "Not a valid version element: '"..tostring(v).."'"
+		return compare(myId, otherId) -- alphanumerical comparison
+	end
+end
+
+local function smallerIdList(myIds, otherIds)
+	local myLength = #myIds
+	local comparison
+
+	for i=1, myLength do
+		comparison = compareIds(myIds[i], otherIds[i])
+		if comparison ~= 0 then
+			return comparison == -1
 		end
-		v = m
+		-- if comparison == 0, continue loop
 	end
-	local t = split(v, "%.")
-	for i, s in ipairs(t) do
-		local n = tonumber(s)
-		if not n then
-			return nil, "Not a valid version element: '"..tostring(v).."'"
+
+	return myLength < #otherIds
+end
+
+local function smallerPrerelease(mine, other)
+	if mine == other or not mine then return false
+	elseif not other then return true
+	end
+
+	return smallerIdList(splitByDot(mine), splitByDot(other))
+end
+
+local methods = {}
+
+function methods:nextMajor()
+	return semver(self.major + 1, 0, 0)
+end
+function methods:nextMinor()
+	return semver(self.major, self.minor + 1, 0)
+end
+function methods:nextPatch()
+	return semver(self.major, self.minor, self.patch + 1)
+end
+
+local mt = { __index = methods }
+function mt:__eq(other)
+	return self.major == other.major and
+	self.minor == other.minor and
+	self.patch == other.patch and
+	self.prerelease == other.prerelease
+	-- notice that build is ignored for precedence in semver 2.0.0
+end
+function mt:__lt(other)
+	if self.major ~= other.major then return self.major < other.major end
+	if self.minor ~= other.minor then return self.minor < other.minor end
+	if self.patch ~= other.patch then return self.patch < other.patch end
+	return smallerPrerelease(self.prerelease, other.prerelease)
+	-- notice that build is ignored for precedence in semver 2.0.0
+end
+-- This works like the "pessimisstic operator" in Rubygems.
+-- if a and b are versions, a ^ b means "b is backwards-compatible with a"
+-- in other words, "it's safe to upgrade from a to b"
+function mt:__pow(other)
+	if self.major == 0 then
+		return self == other
+	end
+	return self.major == other.major and
+	self.minor <= other.minor
+end
+function mt:__tostring()
+	local buffer = { ("%d.%d.%d"):format(self.major, self.minor, self.patch) }
+	if self.prerelease then table.insert(buffer, "-" .. self.prerelease) end
+	if self.build      then table.insert(buffer, "+" .. self.build) end
+	return table.concat(buffer)
+end
+
+local function new(major, minor, patch, prerelease, build)
+	assert(major, "At least one parameter is needed")
+
+	if type(major) == 'string' then
+		major,minor,patch,prerelease,build = parseVersion(major)
+		-- CHANGED: version returns nil if it can't be parsed
+		if major == nil then
+			return nil
 		end
-		t[i] = n
 	end
-	t.strict = strict
-	return setmetatable(t, mt_version)
+	patch = patch or 0
+	minor = minor or 0
+
+	checkPositiveInteger(major, "major")
+	checkPositiveInteger(minor, "minor")
+	checkPositiveInteger(patch, "patch")
+
+	local result = {major=major, minor=minor, patch=patch, prerelease=prerelease, build=build}
+	return setmetatable(result, mt)
 end
 
-_range = function(v1,v2, strict)
-	local err
-	assert (v1 or v2, "At least one parameter is required")
-	v1 = v1 or "0"
-	v2 = v2 or v1
-	if getmetatable(v1) ~= mt_version then
-		v1, err = _new(v1, strict)
-		if not v1 then return nil, err end
-	end
-	if getmetatable(v2) ~= mt_version then
-		v2, err = _new(v2, strict)
-		if not v2 then return nil, err end
-	end
-	if v1 > v2 then
-		return nil, "FROM version must be less than or equal to the TO version"
-	end
+setmetatable(semver, { __call = function(_, ...) return new(...) end })
+semver._VERSION= semver(semver._VERSION)
 
-	return setmetatable({
-		from = v1,
-		to = v2,
-		strict = strict,
-	}, mt_range)
-end
-
-_set = function(v1, v2, strict)
-	return setmetatable({
-		ok = {},
-		nok = {},
-		strict = strict,
-	}, mt_set):allowed(v1, v2)
-end
-
-local make_module = function(strict)
-	return setmetatable({
-		--- Creates a new version object from a string.
-		-- The returned table will have
-		-- comparison operators, eg. LT, EQ, GT. For all comparisons, any missing numbers
-		-- will be assumed to be "0" on the least significant side of the version string.
-		--
-		-- Calling on the module table is a shortcut to `new`.
-		-- @param v String formatted as numbers separated by dots (no limit on number of elements).
-		-- @return `version` object, or `nil+err`
-		-- @usage local v = version.new("0.1")
-		-- -- is identical to
-		-- local v = version("0.1")
-		--
-		-- print(v)     --> "0.1"
-		-- print(v[1])  --> 0
-		-- print(v[2])  --> 1
-		new = function(v) return _new(v, strict) end,
-
-		--- Creates a version range.  A `range` object represents a range of versions.
-		-- @param v1 The FROM version of the range (string or `version` object). If `nil`, assumed to be 0.
-		-- @param v2 (optional) The TO version of the range (string or `version` object). Defaults to `v1`.
-		-- @return range object with `from` and `to` fields and `set:matches` method, or `nil+err`.
-		-- @usage local r = version.range("0.1"," 2.4")
-		--
-		-- print(v.from)     --> "0.1"
-		-- print(v.to[1])    --> 2
-		-- print(v.to[2])    --> 4
-		range = function(v1,v2) return _range(v1, v2, strict) end,
-
-		--- Creates a version set.
-		-- A `set` is an object that contains a number of allowed and disallowed version `range` objects.
-		-- @param v1 initial version/range to allow, see `set:allowed` for parameter descriptions
-		-- @param v2 initial version/range to allow, see `set:allowed` for parameter descriptions
-		-- @return a `set` object, with `ok` and `nok` lists and a `set:matches` method, or `nil+err`
-		set = function(v1, v2) return _set(v1, v2, strict) end,
-	}, {
-		__call = function(self, ...)
-			return self.new(...)
-		end
-	})
-end
-
-local _M = make_module(false)
---- Similar module, but with stricter parsing rules.
--- `version.strict` is identical to the `version` module itself, but it requires
--- exact version strings, where as the regular parser will simply grab the
--- first sequence of numbers and dots from the string.
--- @field strict same module, but for stricter parsing.
-_M.strict = make_module(true)
-
-return _M
+return semver

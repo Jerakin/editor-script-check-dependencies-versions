@@ -9,18 +9,7 @@ function M.get_commands()
 			label="Check Libraries for Updates",
 			locations = {"View"},
 			run = function(opts)
-				if http ~= nil then
-					check_dependencies.main()
-					return {
-					}
-				else
-					return {
-						{
-							action = "shell",
-							command = {"python", "-u", "-c", editor.get("/editor-script-check-dependencies/scripts/check_dependencies.py", "text")}
-						}
-					}
-				end
+				check_dependencies.main()
 			end
 		}
 	}

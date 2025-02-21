@@ -1,26 +1,27 @@
 # Check Dependencies
 
-> [!NOTE]
-> If you can not get this editor script to work you can always run the python script from your command line.
-> Download the python file, within your CMD/Terminal navigate to your project then run the script.
-
 ## Install
 You can use the these editor scripts in your own project by adding this project as a [Defold library dependency](https://www.defold.com/manuals/libraries/). Open your game.project file and in the dependencies field under project add:  
 https://github.com/Jerakin/editor-script-check-dependencies-versions/archive/master.zip
-
-### Dependencies
-You also need to make sure you have python 2.7 or newer.
 
 ## Editor Script
 This script adds a item under `view`. Running the command will print out the states of your dependencies to the console.
 
 ```
-Project 'defold-clipboard' is up to date.
+editor-script-check-depedendencies
+ ✔  The dependency is up to date.
+ ✖  The dependency is outdated.
+ !  The dependency is not using a semver supported release.
 
-Project 'defold-lfs' is outdated, latest version is
-  https://github.com/britzl/defold-lfs/archive/1.0.1.zip
-  
-Project 'extension-gps' is up to date.
+
+✔ defold/extension-safearea (1.5.)
+    https://github.com/defold/extension-safearea/archive/1.5.1.zip
+
+✖ defold/extension-safearea (1.0.0)
+    https://github.com/defold/extension-safearea/archive/1.5.1.zip
+
+! britzl/monarch (master)
+    https://github.com/britzl/monarch/archive/5.1.1.zip
 
 ```
 
