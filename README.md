@@ -14,7 +14,7 @@ editor-script-check-depedendencies
  !  The dependency is not using a semver supported release.
 
 
-✔ defold/extension-safearea (1.5.)
+✔ defold/extension-safearea (1.5.1)
     https://github.com/defold/extension-safearea/archive/1.5.1.zip
 
 ✖ defold/extension-safearea (1.0.0)
