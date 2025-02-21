@@ -40,7 +40,7 @@ local function format_result(result_table)
 			entry.prefix = warning
 		else
 			if latest == nil then
-				entry.prefix = ok
+				entry.prefix = warning
 				entry.latest = "No remote version found."
 			elseif current >= latest then
 				entry.prefix = ok
@@ -105,10 +105,14 @@ local function github_standard(url, result_table)
 			latest_url = "No remote versions found"
 		end
 	elseif response.status == 404 then
+		-- Project has no releases
 		request_url = "https://api.github.com/repos/" ..owner .."/" .. project .. "/tags"
 		response = http.request(request_url, {method="GET", as="json", headers=headers})
 		if response.status == 200 then
-			if response.body[1] ~= nil then
+			if response.body[1] == nil then
+				-- Project has no tags
+				latest_url = "Project has no releases or tags"
+			else
 				tag_name = response.body[1].name
 				latest_url = "https://github.com/" .. owner .. "/" .. project .. "/archive/" .. tag_name .. ".zip"
 			end
